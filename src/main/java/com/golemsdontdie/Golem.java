@@ -395,6 +395,9 @@ class Golem
 		if (dyingCycles < 0)
 		{
 			dyingCycles = GolemContent.GOLEM_DEATH_CYCLES;
+			work = null;
+			workSpot = null;
+			queuedWork = null;
 			path.clear();
 			stepping = false;
 			walking = false;
@@ -501,6 +504,47 @@ class Golem
 	@Getter
 	@Setter
 	private volatile boolean chisel;
+
+	/**
+	 * What the golem is working at now - chopping, mining, fishing - or null. Only in view, and
+	 * only ever performed: see {@link GolemWork}. Read by the renderer's thread for the tool.
+	 */
+	@Getter
+	private volatile GolemWork work;
+
+	/** The spot it is working at, or null for handiwork done anywhere. */
+	private WorkSpots.Spot workSpot;
+
+	/** The tick it puts its tools down. */
+	private int workUntil;
+
+	/** Which way it faces its work, turned back to after a wave or a look; -1 for handiwork, which faces nothing. */
+	private int workHeading = -1;
+
+	/** A spot it is walking to, to work at on arrival, and the tile it will stand on there. */
+	private WorkSpots.Spot queuedWork;
+	private int queuedWorkX;
+	private int queuedWorkY;
+
+	/** Chance, per decision about where to go next, that a golem goes to work at something nearby. */
+	private static final float WORK_CHANCE = 0.2f;
+
+	/** Chance, per decision, of handiwork where it stands when there is nothing nearby to work at. */
+	private static final float HANDIWORK_CHANCE = 0.04f;
+
+	/** How far a golem looks for something to work at, in tiles. */
+	private static final int WORK_REACH = 10;
+
+	/** How long a golem keeps at it, in ticks: half a minute to a minute and a half. */
+	private static final int WORK_MIN_TICKS = 50;
+	private static final int WORK_SPREAD_TICKS = 100;
+
+	/** The tool's wield model while working, or -1: what the golem is drawn holding. */
+	int getWorkTool()
+	{
+		GolemWork now = work;
+		return now == null ? -1 : now.getToolModel();
+	}
 
 	/**
 	 * True while the golem is inside an instance - through the pew, in the Mad Angel's room.
@@ -857,10 +901,17 @@ class Golem
 
 		boolean wasFar = tier == GolemTier.FAR;
 		tier = now;
-		// Out of view a crossing is not drawn, so there is nothing to trace.
+		// Out of view a crossing is not drawn, so there is nothing to trace. Nor is there anything
+		// to work at: the spots are the loaded scene's.
 		if (now != GolemTier.SCENE)
 		{
 			tracing = null;
+		}
+		if (now == GolemTier.FAR)
+		{
+			work = null;
+			workSpot = null;
+			queuedWork = null;
 		}
 
 		if (now == GolemTier.FAR)
@@ -1110,6 +1161,9 @@ class Golem
 		queuedDock = null;
 		facingObstacle = null;
 		wayOffDeadEnd = null;
+		queuedWork = null;
+		work = null;
+		workSpot = null;
 		transportMemory.clearPending();
 		// A crossing interrupted by being put somewhere else is not one worth recording.
 		tracing = null;
@@ -1179,6 +1233,24 @@ class Golem
 			return false;
 		}
 
+		// At work: it stands at the tree or the rock, facing it, until it has done enough. A
+		// celebration calls it away, and so does the thing itself going - a tree a player felled.
+		if (work != null)
+		{
+			if (keepsWorking(context))
+			{
+				// A wave or a look at the player turns it away; that done, back to the tree, or it went
+				// on chopping at nothing.
+				if (workHeading >= 0 && !isGreeting(context.getTick()))
+				{
+					targetOrientation = workHeading;
+				}
+				turnToward(cycles);
+				return false;
+			}
+			stopWork(context.getTick());
+		}
+
 		// A route carries the golem only if it is a crossing. Roaming routes are straight
 		// lines drawn without consulting the map, safe only while nobody can see: following
 		// one in view put golems sliding through the sea and the cliffs, so one found here
@@ -1239,7 +1311,8 @@ class Golem
 					// Hopping off a stepping stone is not a search and must not wait on the
 					// budget: a golem mid-crossing has nowhere to walk, so being told to
 					// try next frame left it in a river until the watchdog came.
-					if (takeQueuedTransport(context) || takeQueuedDock(context) || considerTransport(context))
+					if (takeQueuedTransport(context) || takeQueuedDock(context) || takeQueuedWork(context)
+						|| considerTransport(context))
 					{
 						return searched;
 					}
@@ -1262,6 +1335,11 @@ class Golem
 					searched = true;
 					// Somewhere it knows no way out of: back the way it came in, now and then.
 					if (headHome(context))
+					{
+						return searched;
+					}
+					// Now and then, a tree to chop or a rock to mine, if there is one nearby.
+					if (headToWork(context))
 					{
 						return searched;
 					}
@@ -1364,7 +1442,7 @@ class Golem
 				// at a quayside, or about it: a ladder taken there left a crew waiting on a golem
 				// that had wandered off.
 				if (!isWaiting(context.getTick()) && (takeQueuedTransport(context) || takeQueuedDock(context)
-					|| considerBoarding(context) || considerTransport(context)))
+					|| takeQueuedWork(context) || considerBoarding(context) || considerTransport(context)))
 				{
 					return searched;
 				}
@@ -2011,6 +2089,186 @@ class Golem
 			dwellRemaining = DWELL_MIN + random.nextInt(DWELL_SPREAD);
 		}
 		return true;
+	}
+
+	/**
+	 * Sets off to work at something nearby, now and then: a tree, a rock, a range, a fishing spot.
+	 * Failing that, very occasionally, some handiwork where it stands. See {@link GolemWork}.
+	 *
+	 * @return true if it set off or started, or searched and found no way: the frame's search
+	 */
+	private boolean headToWork(RoamContext context)
+	{
+		WorkSpots spots = context.getWorkSpots();
+		if (spots == null)
+		{
+			return false;
+		}
+		float roll = random.nextFloat();
+		if (roll >= WORK_CHANCE)
+		{
+			return false;
+		}
+		int tileX = fineX / TILE;
+		int tileY = fineY / TILE;
+		List<WorkSpots.Spot> near = spots.near(tileX, tileY, plane, WORK_REACH, new ArrayList<>());
+		Collections.shuffle(near, random);
+		for (WorkSpots.Spot spot : near)
+		{
+			int[] stand = standingFor(spot, tileX, tileY, context);
+			if (stand == null)
+			{
+				continue;
+			}
+			if (stand[0] == tileX && stand[1] == tileY)
+			{
+				startWork(spot.getWork(), spot, context.getTick());
+				return true;
+			}
+			if (walkTo(stand[0], stand[1], context))
+			{
+				queuedWork = spot;
+				queuedWorkX = stand[0];
+				queuedWorkY = stand[1];
+			}
+			else
+			{
+				dwellRemaining = DWELL_MIN + random.nextInt(DWELL_SPREAD);
+			}
+			return true;
+		}
+		// Nothing to work at: whittling or stitching where it stands, rarely, and never somewhere
+		// it could not stand to begin with.
+		if (roll < HANDIWORK_CHANCE && context.getMemory().isKnownWalkable(tileX, tileY, plane))
+		{
+			startWork(GolemWork.HANDIWORK[random.nextInt(GolemWork.HANDIWORK.length)], null, context.getTick());
+			return true;
+		}
+		return false;
+	}
+
+	/**
+	 * A tile to stand on while working at the spot: one the golem can walk on with nobody else on it,
+	 * beside a side of the spot rather than a corner, as a player stands, and on the spot's side of
+	 * any wall - see {@link WorkSpots.Spot#getStands}. The golem's own tile if that will do; null if
+	 * none will.
+	 */
+	private int[] standingFor(WorkSpots.Spot spot, int tileX, int tileY, RoamContext context)
+	{
+		if (spot.isStand(tileX, tileY) && aloneOn(tileX, tileY, context, true))
+		{
+			return new int[]{tileX, tileY};
+		}
+		List<int[]> sides = new ArrayList<>();
+		if (spot.getStands() != null)
+		{
+			sides.addAll(Arrays.asList(spot.getStands()));
+		}
+		else
+		{
+			for (int x = spot.getX(); x < spot.getX() + spot.getWidth(); x++)
+			{
+				sides.add(new int[]{x, spot.getY() - 1});
+				sides.add(new int[]{x, spot.getY() + spot.getHeight()});
+			}
+			for (int y = spot.getY(); y < spot.getY() + spot.getHeight(); y++)
+			{
+				sides.add(new int[]{spot.getX() - 1, y});
+				sides.add(new int[]{spot.getX() + spot.getWidth(), y});
+			}
+		}
+		Collections.shuffle(sides, random);
+		for (int[] side : sides)
+		{
+			if (context.getMemory().isKnownWalkable(side[0], side[1], plane) && aloneOn(side[0], side[1], context, false))
+			{
+				return side;
+			}
+		}
+		return null;
+	}
+
+	/** True if no other golem stands on this tile; {@code mine} when this golem is one of those counted. */
+	private boolean aloneOn(int x, int y, RoamContext context, boolean mine)
+	{
+		TileMap occupancy = context.getOccupancy();
+		long here = occupancy == null ? 0 : occupancy.getOrDefault(RoamContext.tileKey(x, y, plane), 0L);
+		return here <= (mine ? 1 : 0);
+	}
+
+	/**
+	 * Starts work at the spot it walked to, once it is standing there.
+	 *
+	 * @return true if it started, stopping this frame's movement
+	 */
+	private boolean takeQueuedWork(RoamContext context)
+	{
+		if (queuedWork == null)
+		{
+			return false;
+		}
+		if (fineX / TILE != queuedWorkX || fineY / TILE != queuedWorkY)
+		{
+			// Still on the way; or the path ran out short of it, and the plan is stale.
+			if (path.isEmpty() && !stepping)
+			{
+				queuedWork = null;
+			}
+			return false;
+		}
+		WorkSpots.Spot spot = queuedWork;
+		queuedWork = null;
+		WorkSpots spots = context.getWorkSpots();
+		if (spots == null || !spots.stillThere(spot))
+		{
+			// Felled or moved on while the golem walked over.
+			return false;
+		}
+		startWork(spot.getWork(), spot, context.getTick());
+		return true;
+	}
+
+	private void startWork(GolemWork what, WorkSpots.Spot spot, int tick)
+	{
+		path.clear();
+		stepping = false;
+		walking = false;
+		work = what;
+		workSpot = spot;
+		workUntil = tick + WORK_MIN_TICKS + random.nextInt(WORK_SPREAD_TICKS);
+		if (spot != null)
+		{
+			// Facing the middle of it, as a player faces the tree it chops.
+			int dx = spot.getX() * TILE + spot.getWidth() * TILE / 2 - fineX;
+			int dy = spot.getY() * TILE + spot.getHeight() * TILE / 2 - fineY;
+			targetOrientation = headingFor(dx, dy);
+			workHeading = targetOrientation;
+		}
+		else
+		{
+			workHeading = -1;
+		}
+	}
+
+	/** True while the golem should carry on with the work it is at. */
+	private boolean keepsWorking(RoamContext context)
+	{
+		int tick = context.getTick();
+		if (tick >= workUntil || dancing || isPartying(tick) || isDying())
+		{
+			return false;
+		}
+		WorkSpots spots = context.getWorkSpots();
+		return workSpot == null ? spots != null : spots != null && spots.stillThere(workSpot);
+	}
+
+	private void stopWork(int tick)
+	{
+		work = null;
+		workSpot = null;
+		// Standing still at work is not being stuck; the watchdog starts counting again from here.
+		noteUnstuck(tick);
+		dwellRemaining = DWELL_MIN + random.nextInt(DWELL_SPREAD);
 	}
 
 	/**
@@ -3072,6 +3330,12 @@ class Golem
 		if (!walking && isGreeting(tickNow) && greetAnimation != -1)
 		{
 			return greetAnimation;
+		}
+		// At work, which a wave breaks into and a dance ends.
+		GolemWork now = work;
+		if (now != null && !walking)
+		{
+			return now.getAnimation();
 		}
 		// Last of all, and never over anything else: a golem climbing, crossing or at the helm has
 		// a pose already, and one halfway through a recorded motion is having its frames set by

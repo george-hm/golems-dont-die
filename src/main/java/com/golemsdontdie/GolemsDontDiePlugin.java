@@ -709,6 +709,7 @@ public class GolemsDontDiePlugin extends Plugin
 		roamContext.setTraversals(obstacleData::golemCrossed);
 		roamContext.setMuster(crews::offer);
 		roamContext.setModels(modelFactory);
+		workSpots = new WorkSpots(client);
 
 		// Golems are the account's, so they are read at login; enabling mid-session skips the login,
 		// and with it the dock table, which is game data. Read both now, docks first: without them
@@ -2162,6 +2163,43 @@ public class GolemsDontDiePlugin extends Plugin
 	/** The plane last harvested for, so moving to another floor harvests that one. */
 	private int harvestedPlane = -1;
 
+	/** What golems in view could work at, read from the scene. See GolemWork. */
+	private WorkSpots workSpots;
+
+	/** A tree felled, a rock mined out, a fire lit or gone out: the scene's spots are read again. */
+	@Subscribe
+	public void onGameObjectSpawned(GameObjectSpawned event)
+	{
+		if (workSpots != null)
+		{
+			workSpots.sceneChanged();
+		}
+	}
+
+	@Subscribe
+	public void onGameObjectDespawned(GameObjectDespawned event)
+	{
+		if (workSpots != null)
+		{
+			workSpots.sceneChanged();
+		}
+	}
+
+	/** Brings the work spots up to date, once a tick, and hands them to golems only if they are to work. */
+	private void updateWorkSpots()
+	{
+		if (workSpots == null || roamContext == null)
+		{
+			return;
+		}
+		boolean working = config.golemsWork();
+		if (working)
+		{
+			workSpots.update(client.getTopLevelWorldView(), client.getTickCount());
+		}
+		roamContext.setWorkSpots(working ? workSpots : null);
+	}
+
 	/** A door opened: the shut door's wall object went and the open door's came. */
 	@Subscribe
 	public void onWallObjectSpawned(WallObjectSpawned event)
@@ -3366,6 +3404,7 @@ public class GolemsDontDiePlugin extends Plugin
 		announceUpdate();
 		readDiaries();
 		obstacleObserver.onGameTick();
+		updateWorkSpots();
 		// Refreshed continuously rather than read once at spawn: a golem steps off its
 		// plinth and starts walking, and its pose animations need not be the ones it had
 		// while standing on it.
@@ -3574,6 +3613,10 @@ public class GolemsDontDiePlugin extends Plugin
 			clearRafts();
 			lastGameCycle = -1;
 			islandMemory.sceneChanged();
+			if (workSpots != null)
+			{
+				workSpots.sceneChanged();
+			}
 			return;
 		}
 
