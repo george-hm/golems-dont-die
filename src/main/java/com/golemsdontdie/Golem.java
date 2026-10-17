@@ -527,10 +527,10 @@ class Golem
 	private int queuedWorkY;
 
 	/** Chance, per decision about where to go next, that a golem goes to work at something nearby. */
-	private static final float WORK_CHANCE = 0.2f;
+	private static final float WORK_CHANCE = 0.12f;
 
 	/** Chance, per decision, of handiwork where it stands when there is nothing nearby to work at. */
-	private static final float HANDIWORK_CHANCE = 0.04f;
+	private static final float HANDIWORK_CHANCE = 0.02f;
 
 	/** How far a golem looks for something to work at, in tiles. */
 	private static final int WORK_REACH = 10;

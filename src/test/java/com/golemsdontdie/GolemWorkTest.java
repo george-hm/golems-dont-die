@@ -146,8 +146,8 @@ public class GolemWorkTest
 		for (long seed = 0; seed < 20_000; seed++)
 		{
 			int traits = GolemTrait.of(seed);
-			Assert.assertTrue(0.04f * GolemWork.eagerness(traits) * GolemWork.handiness(traits)
-				<= 0.2f * GolemWork.eagerness(traits));
+			Assert.assertTrue(0.02f * GolemWork.eagerness(traits) * GolemWork.handiness(traits)
+				<= 0.12f * GolemWork.eagerness(traits));
 		}
 	}
 
