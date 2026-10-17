@@ -42,6 +42,57 @@ enum GolemWork
 	/** What a golem can do anywhere, wanting no object to stand at. */
 	static final GolemWork[] HANDIWORK = {FLETCHING, LEATHERWORK};
 
+	/** True for the ways of fishing. */
+	boolean isFishing()
+	{
+		return this == NET_FISHING || this == BIG_NET_FISHING || this == ROD_FISHING
+			|| this == CAGE_FISHING || this == HARPOON_FISHING;
+	}
+
+	/** True for what a crafty golem makes: at a wheel or a loom, or in its hands anywhere. */
+	boolean isCraft()
+	{
+		return this == POTTERY || this == SPINNING || this == WEAVING || this == FLETCHING || this == LEATHERWORK;
+	}
+
+	// ------------------------------------------------------------------ the working traits
+
+	/** How much more often than most a golem with these traits goes to work: see GolemTrait. */
+	static float eagerness(int traits)
+	{
+		if (GolemTrait.HARD_WORKING.in(traits))
+		{
+			return 2.5f;
+		}
+		return GolemTrait.WORK_SHY.in(traits) ? 0.25f : 1f;
+	}
+
+	/** How much more often than most it takes up handiwork where it stands, with nothing nearby. */
+	static float handiness(int traits)
+	{
+		return GolemTrait.CRAFTY.in(traits) ? 4f : 1f;
+	}
+
+	/** How much longer than most it keeps at this work. An angler stays at the river. */
+	static float stamina(int traits, GolemWork work)
+	{
+		float scale = GolemTrait.HARD_WORKING.in(traits) ? 1.5f : GolemTrait.WORK_SHY.in(traits) ? 0.5f : 1f;
+		if (work.isFishing() && GolemTrait.ANGLER.in(traits))
+		{
+			scale *= 1.5f;
+		}
+		return scale;
+	}
+
+	/** True if this is the golem's trade, which it picks over anything else in reach. */
+	static boolean isTradeOf(int traits, GolemWork work)
+	{
+		return work == WOODCUTTING && GolemTrait.LUMBERJACK.in(traits)
+			|| work == MINING && GolemTrait.PROSPECTOR.in(traits)
+			|| work.isFishing() && GolemTrait.ANGLER.in(traits)
+			|| work.isCraft() && GolemTrait.CRAFTY.in(traits);
+	}
+
 	/**
 	 * What a golem would do at a scene object, by what the game offers a player there, or null. Read
 	 * from the menu rather than a list of object ids: every tree that can be chopped says so, and a

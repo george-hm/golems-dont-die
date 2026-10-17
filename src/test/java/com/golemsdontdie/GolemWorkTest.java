@@ -6,6 +6,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
+import org.junit.Assert;
 
 /** What golems work at, by what the game offers a player there, and where they stand to do it. */
 public class GolemWorkTest
@@ -107,6 +108,47 @@ public class GolemWorkTest
 		assertTrue(range.isStand(1010, 2011));
 		assertTrue(range.isStand(1011, 2010));
 		assertEquals(2, range.getStands().length);
+	}
+
+	/** What the working traits do: how often, how long, and what a golem with a trade picks. */
+	@Test
+	public void theWorkingTraits()
+	{
+		int none = 0;
+		int hard = GolemTrait.HARD_WORKING.mask();
+		int shy = GolemTrait.WORK_SHY.mask();
+		int angler = GolemTrait.ANGLER.mask();
+
+		Assert.assertTrue(GolemWork.eagerness(hard) > GolemWork.eagerness(none));
+		Assert.assertTrue(GolemWork.eagerness(shy) < GolemWork.eagerness(none));
+		Assert.assertTrue(GolemWork.stamina(hard, GolemWork.MINING) > 1f);
+		Assert.assertTrue(GolemWork.stamina(shy, GolemWork.MINING) < 1f);
+		Assert.assertTrue("an angler stays at the river",
+			GolemWork.stamina(angler, GolemWork.ROD_FISHING) > GolemWork.stamina(angler, GolemWork.MINING));
+		Assert.assertTrue(GolemWork.handiness(GolemTrait.CRAFTY.mask()) > GolemWork.handiness(none));
+
+		Assert.assertTrue(GolemWork.isTradeOf(GolemTrait.LUMBERJACK.mask(), GolemWork.WOODCUTTING));
+		Assert.assertFalse(GolemWork.isTradeOf(GolemTrait.LUMBERJACK.mask(), GolemWork.MINING));
+		Assert.assertTrue(GolemWork.isTradeOf(GolemTrait.PROSPECTOR.mask(), GolemWork.MINING));
+		Assert.assertTrue(GolemWork.isTradeOf(angler, GolemWork.HARPOON_FISHING));
+		Assert.assertTrue(GolemWork.isTradeOf(GolemTrait.CRAFTY.mask(), GolemWork.SPINNING));
+		Assert.assertTrue(GolemWork.isTradeOf(GolemTrait.CRAFTY.mask(), GolemWork.FLETCHING));
+		Assert.assertFalse(GolemWork.isTradeOf(none, GolemWork.WOODCUTTING));
+	}
+
+	/**
+	 * Handiwork must stay reachable however eager the golem: its chance is taken out of the roll
+	 * that sent it to work at all, so it can never be larger than that roll's.
+	 */
+	@Test
+	public void handiworkNeverOutrunsWork()
+	{
+		for (long seed = 0; seed < 20_000; seed++)
+		{
+			int traits = GolemTrait.of(seed);
+			Assert.assertTrue(0.04f * GolemWork.eagerness(traits) * GolemWork.handiness(traits)
+				<= 0.2f * GolemWork.eagerness(traits));
+		}
 	}
 
 	/** The first read is due at once, whatever the tick: the spots were once never read at all. */

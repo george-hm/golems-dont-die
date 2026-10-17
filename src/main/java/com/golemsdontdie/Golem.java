@@ -2104,8 +2104,10 @@ class Golem
 		{
 			return false;
 		}
+		// A hard-working golem goes far more often than most, a work-shy one hardly at all.
+		float eagerness = GolemWork.eagerness(traits);
 		float roll = random.nextFloat();
-		if (roll >= WORK_CHANCE)
+		if (roll >= WORK_CHANCE * eagerness)
 		{
 			return false;
 		}
@@ -2113,6 +2115,10 @@ class Golem
 		int tileY = fineY / TILE;
 		List<WorkSpots.Spot> near = spots.near(tileX, tileY, plane, WORK_REACH, new ArrayList<>());
 		Collections.shuffle(near, random);
+		// Its trade first, if it has one and it is here: a lumberjack never passes a tree for a rock.
+		// A stable sort, so the shuffle still decides among the trees.
+		near.sort((one, other) -> Boolean.compare(GolemWork.isTradeOf(traits, other.getWork()),
+			GolemWork.isTradeOf(traits, one.getWork())));
 		for (WorkSpots.Spot spot : near)
 		{
 			int[] stand = standingFor(spot, tileX, tileY, context);
@@ -2139,7 +2145,8 @@ class Golem
 		}
 		// Nothing to work at: whittling or stitching where it stands, rarely, and never somewhere
 		// it could not stand to begin with.
-		if (roll < HANDIWORK_CHANCE && context.getMemory().isKnownWalkable(tileX, tileY, plane))
+		if (roll < HANDIWORK_CHANCE * eagerness * GolemWork.handiness(traits)
+			&& context.getMemory().isKnownWalkable(tileX, tileY, plane))
 		{
 			startWork(GolemWork.HANDIWORK[random.nextInt(GolemWork.HANDIWORK.length)], null, context.getTick());
 			return true;
@@ -2235,7 +2242,9 @@ class Golem
 		walking = false;
 		work = what;
 		workSpot = spot;
-		workUntil = tick + WORK_MIN_TICKS + random.nextInt(WORK_SPREAD_TICKS);
+		// Longer for a hard worker, and for an angler at the river; shorter for a work-shy golem.
+		int usual = Math.round((WORK_MIN_TICKS + random.nextInt(WORK_SPREAD_TICKS)) * GolemWork.stamina(traits, what));
+		workUntil = tick + usual;
 		if (spot != null)
 		{
 			// Facing the middle of it, as a player faces the tree it chops.
