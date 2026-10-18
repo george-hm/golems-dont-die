@@ -2226,9 +2226,9 @@ class Golem
 		WorkSpots.Spot spot = queuedWork;
 		queuedWork = null;
 		WorkSpots spots = context.getWorkSpots();
-		if (spots == null || !spots.stillThere(spot))
+		if (spots == null || !spots.workableFrom(spot, queuedWorkX, queuedWorkY))
 		{
-			// Felled or moved on while the golem walked over.
+			// Felled or moved on while the golem walked over, or a door shut between it and the spot.
 			return false;
 		}
 		startWork(spot.getWork(), spot, context.getTick());
@@ -2268,7 +2268,8 @@ class Golem
 			return false;
 		}
 		WorkSpots spots = context.getWorkSpots();
-		return workSpot == null ? spots != null : spots != null && spots.stillThere(workSpot);
+		return workSpot == null ? spots != null
+			: spots != null && spots.workableFrom(workSpot, fineX / TILE, fineY / TILE);
 	}
 
 	private void stopWork(int tick)

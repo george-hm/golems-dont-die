@@ -76,7 +76,8 @@ final class WorkSpots
 
 	private List<Spot> objects = Collections.emptyList();
 	private List<Spot> fishing = Collections.emptyList();
-	private Set<Spot> present = Collections.emptySet();
+	/** Every spot now known, to itself: the latest reading of a spot, its stands included. */
+	private Map<Spot, Spot> present = Collections.emptyMap();
 
 	private boolean dirty = true;
 	private int scannedTick = Integer.MIN_VALUE;
@@ -101,7 +102,7 @@ final class WorkSpots
 	{
 		objects = Collections.emptyList();
 		fishing = Collections.emptyList();
-		present = Collections.emptySet();
+		present = Collections.emptyMap();
 		byObject.clear();
 		dirty = true;
 		scannedTick = Integer.MIN_VALUE;
@@ -118,7 +119,7 @@ final class WorkSpots
 			{
 				objects = Collections.emptyList();
 				fishing = Collections.emptyList();
-				present = Collections.emptySet();
+				present = Collections.emptyMap();
 			}
 			return;
 		}
@@ -138,8 +139,15 @@ final class WorkSpots
 		}
 		if (changed)
 		{
-			Set<Spot> all = new HashSet<>(objects);
-			all.addAll(fishing);
+			Map<Spot, Spot> all = new HashMap<>();
+			for (Spot spot : objects)
+			{
+				all.put(spot, spot);
+			}
+			for (Spot spot : fishing)
+			{
+				all.put(spot, spot);
+			}
 			present = all;
 		}
 	}
@@ -342,7 +350,18 @@ final class WorkSpots
 	/** True while this spot is still in the scene as it was: a tree not yet felled, a fishing spot not moved on. */
 	boolean stillThere(Spot spot)
 	{
-		return present.contains(spot);
+		return present.containsKey(spot);
+	}
+
+	/**
+	 * True while this spot is still in the scene and this tile is still one it may be worked from, by the
+	 * latest reading: a door shut since the golem chose its side can leave it working through a wall.
+	 * A spot is the same spot across readings, but its stands are read afresh each time.
+	 */
+	boolean workableFrom(Spot spot, int tileX, int tileY)
+	{
+		Spot latest = present.get(spot);
+		return latest != null && latest.isStand(tileX, tileY);
 	}
 
 	/** For tests: spots as given, with no scene behind them. */
@@ -350,7 +369,11 @@ final class WorkSpots
 	{
 		WorkSpots made = new WorkSpots(null);
 		made.objects = new ArrayList<>(spots);
-		made.present = new HashSet<>(spots);
+		made.present = new HashMap<>();
+		for (Spot spot : spots)
+		{
+			made.present.put(spot, spot);
+		}
 		made.dirty = false;
 		return made;
 	}

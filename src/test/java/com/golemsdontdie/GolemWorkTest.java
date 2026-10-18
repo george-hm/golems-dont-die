@@ -151,6 +151,25 @@ public class GolemWorkTest
 		}
 	}
 
+	/**
+	 * A golem's side of a spot is judged by the latest reading, not the one it chose by: a door shut
+	 * since leaves the same spot with that side walled off, and the golem stops working through it.
+	 */
+	@Test
+	public void aSideWalledOffSinceIsNoLongerWorkedFrom()
+	{
+		WorkSpots.Spot chosen = new WorkSpots.Spot(10, 10, 0, 1, 1, GolemWork.COOKING_ON_RANGE);
+		chosen.setStands(new int[][]{{10, 9}, {10, 11}});
+		WorkSpots.Spot reread = new WorkSpots.Spot(10, 10, 0, 1, 1, GolemWork.COOKING_ON_RANGE);
+		reread.setStands(new int[][]{{10, 11}});
+		WorkSpots spots = WorkSpots.of(Collections.singletonList(reread));
+
+		assertTrue("the same spot", spots.stillThere(chosen));
+		assertFalse("walled off since", spots.workableFrom(chosen, 10, 9));
+		assertTrue(spots.workableFrom(chosen, 10, 11));
+		assertFalse("gone", WorkSpots.of(Collections.emptyList()).workableFrom(chosen, 10, 11));
+	}
+
 	/** The first read is due at once, whatever the tick: the spots were once never read at all. */
 	@Test
 	public void theSceneIsReadAtOnceAndThenEverySoOften()
