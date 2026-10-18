@@ -3677,6 +3677,11 @@ public class GolemsDontDiePlugin extends Plugin
 				golem.forgetMoments();
 			}
 			crews.releaseMusters();
+			// The tiles they held were held against this session's ticks.
+			if (workSpots != null)
+			{
+				workSpots.clear();
+			}
 
 			for (Golem golem : golems)
 			{
