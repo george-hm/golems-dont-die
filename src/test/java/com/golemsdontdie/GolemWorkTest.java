@@ -197,6 +197,28 @@ public class GolemWorkTest
 		assertFalse("the tick counter started again", spots.claimedByOther(9, 9, 0, 2L, 3));
 	}
 
+	/**
+	 * No golem's session runs past the cap that throws out a deadline from before the tick counter
+	 * started again: whatever its traits and its work, the longest it can be dealt fits under it.
+	 */
+	@Test
+	public void everySessionFitsUnderTheCap()
+	{
+		float longest = 0f;
+		for (long seed = 0; seed < 20_000; seed++)
+		{
+			int traits = GolemTrait.of(seed);
+			for (GolemWork work : GolemWork.values())
+			{
+				longest = Math.max(longest, GolemWork.stamina(traits, work));
+			}
+		}
+		// The hard-working angler, the longest of all, is dealt in practice.
+		assertEquals(2.25f, longest, 0.001f);
+		int most = Math.round((Golem.WORK_MIN_TICKS + Golem.WORK_SPREAD_TICKS - 1) * longest);
+		assertTrue(most + " over the cap", most <= Golem.MOST_WORK_TICKS);
+	}
+
 	/** The first read is due at once, whatever the tick: the spots were once never read at all. */
 	@Test
 	public void theSceneIsReadAtOnceAndThenEverySoOften()

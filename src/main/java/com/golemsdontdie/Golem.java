@@ -539,8 +539,14 @@ class Golem
 	private static final int WORK_REACH = 10;
 
 	/** How long a golem keeps at it, in ticks: half a minute to a minute and a half. */
-	private static final int WORK_MIN_TICKS = 50;
-	private static final int WORK_SPREAD_TICKS = 100;
+	static final int WORK_MIN_TICKS = 50;
+	static final int WORK_SPREAD_TICKS = 100;
+
+	/**
+	 * The longest a session can run: the longest spread, as long again as a hard-working angler at the
+	 * river keeps at it, which is half as long again twice. See GolemWork.stamina.
+	 */
+	static final int MOST_WORK_TICKS = (WORK_MIN_TICKS + WORK_SPREAD_TICKS) * 9 / 4;
 
 	/** The tool's wield model while working, or -1: what the golem is drawn holding. */
 	int getWorkTool()
@@ -2288,7 +2294,9 @@ class Golem
 	private boolean keepsWorking(RoamContext context)
 	{
 		int tick = context.getTick();
-		if (tick >= workUntil || dancing || isPartying(tick) || isDying())
+		// Further off than any session runs is a deadline from before the tick counter started again, at a
+		// relog or a hop, which would otherwise keep the golem at it for the whole of the last login.
+		if (tick >= workUntil || workUntil - tick > MOST_WORK_TICKS || dancing || isPartying(tick) || isDying())
 		{
 			return false;
 		}
@@ -3175,13 +3183,16 @@ class Golem
 
 	/**
 	 * Forgets anything the golem was in the middle of for the player's benefit - a wave, a look, a
-	 * dance of its own - on a log out or a world hop, where the moment is over whatever the clock
-	 * says.
+	 * dance of its own, a tree it was chopping - on a log out or a world hop, where the moment is over
+	 * whatever the clock says.
 	 */
 	void forgetMoments()
 	{
 		greetUntil = 0;
 		partyUntil = 0;
+		work = null;
+		workSpot = null;
+		queuedWork = null;
 		wavedAtGolem = -1;
 		playerWaves = 0;
 		nearPlayerTick = Integer.MIN_VALUE;
