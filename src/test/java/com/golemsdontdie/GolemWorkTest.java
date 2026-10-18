@@ -170,6 +170,33 @@ public class GolemWorkTest
 		assertFalse("gone", WorkSpots.of(Collections.emptyList()).workableFrom(chosen, 10, 11));
 	}
 
+	/**
+	 * Two golems never work from one tile: the first to claim it holds it, even in the same frame, until
+	 * it lets go or the claim lapses - which it does by itself, so a golem moved away holds nothing.
+	 */
+	@Test
+	public void aStandIsHeldByOneGolemAtATime()
+	{
+		WorkSpots spots = WorkSpots.of(Collections.emptyList());
+		assertTrue(spots.claim(5, 5, 0, 1L, 100, 150));
+		assertFalse("taken", spots.claim(5, 5, 0, 2L, 100, 150));
+		assertTrue(spots.claimedByOther(5, 5, 0, 2L, 120));
+		assertFalse("its own", spots.claimedByOther(5, 5, 0, 1L, 120));
+		assertTrue("claimed again by the same golem", spots.claim(5, 5, 0, 1L, 120, 300));
+		assertFalse("another floor", spots.claimedByOther(5, 5, 1, 2L, 120));
+
+		spots.release(5, 5, 0, 2L);
+		assertTrue("only its holder lets go", spots.claimedByOther(5, 5, 0, 2L, 120));
+		spots.release(5, 5, 0, 1L);
+		assertTrue(spots.claim(5, 5, 0, 2L, 120, 170));
+
+		assertFalse("lapsed", spots.claimedByOther(5, 5, 0, 1L, 170));
+
+		// Claimed an hour into one login, asked about just after the next: further off than any claim runs.
+		assertTrue(spots.claim(9, 9, 0, 1L, 6000, 6050));
+		assertFalse("the tick counter started again", spots.claimedByOther(9, 9, 0, 2L, 3));
+	}
+
 	/** The first read is due at once, whatever the tick: the spots were once never read at all. */
 	@Test
 	public void theSceneIsReadAtOnceAndThenEverySoOften()

@@ -83,6 +83,20 @@ final class WorkSpots
 	private int scannedTick = Integer.MIN_VALUE;
 	private int fishedTick = Integer.MIN_VALUE;
 
+	/**
+	 * Tiles golems have claimed to work from, by {@link RoamContext#tileKey}, to {claiming golem's id,
+	 * tick the claim lapses}. Claimed as a golem sets off and again as it starts, so two never pick the
+	 * same tile, even arriving in the same frame; the frame's occupancy only counts where golems stood
+	 * as it began. A claim lapses by itself, so a golem moved off or gone never holds a tile for good.
+	 */
+	private final Map<Long, long[]> claims = new HashMap<>();
+
+	/** Longer than any claim is made for, so one from before the tick counter started again lapses. */
+	private static final int MOST_CLAIM_TICKS = 600;
+
+	/** Claims kept before the lapsed ones are swept out. */
+	private static final int CLAIMS_BEFORE_SWEEP = 512;
+
 	/** Per object id, what is done there; ids that offer nothing are kept too, as null. */
 	private final Map<Integer, GolemWork> byObject = new HashMap<>();
 
@@ -104,6 +118,7 @@ final class WorkSpots
 		fishing = Collections.emptyList();
 		present = Collections.emptyMap();
 		byObject.clear();
+		claims.clear();
 		dirty = true;
 		scannedTick = Integer.MIN_VALUE;
 		fishedTick = Integer.MIN_VALUE;
@@ -362,6 +377,52 @@ final class WorkSpots
 	{
 		Spot latest = present.get(spot);
 		return latest != null && latest.isStand(tileX, tileY);
+	}
+
+	/**
+	 * Claims a tile for a golem to work from until a tick, unless another golem holds it. A golem may
+	 * claim a tile again, as it does on starting work there.
+	 *
+	 * @return true if the golem holds the tile now
+	 */
+	boolean claim(int x, int y, int plane, long owner, int tick, int until)
+	{
+		long key = RoamContext.tileKey(x, y, plane);
+		long[] held = claims.get(key);
+		if (held != null && held[0] != owner && !lapsed(held, tick))
+		{
+			return false;
+		}
+		if (claims.size() >= CLAIMS_BEFORE_SWEEP)
+		{
+			claims.values().removeIf(claim -> lapsed(claim, tick));
+		}
+		claims.put(key, new long[]{owner, until});
+		return true;
+	}
+
+	/** True if a golem other than this one holds the tile. */
+	boolean claimedByOther(int x, int y, int plane, long owner, int tick)
+	{
+		long[] held = claims.get(RoamContext.tileKey(x, y, plane));
+		return held != null && held[0] != owner && !lapsed(held, tick);
+	}
+
+	/** Lets go of a tile, if this golem holds it. */
+	void release(int x, int y, int plane, long owner)
+	{
+		long key = RoamContext.tileKey(x, y, plane);
+		long[] held = claims.get(key);
+		if (held != null && held[0] == owner)
+		{
+			claims.remove(key);
+		}
+	}
+
+	/** Past its tick, or further off than any claim is made for: the tick counter started again. */
+	private static boolean lapsed(long[] claim, int tick)
+	{
+		return tick >= claim[1] || claim[1] - tick > MOST_CLAIM_TICKS;
 	}
 
 	/** For tests: spots as given, with no scene behind them. */
