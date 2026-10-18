@@ -2205,12 +2205,21 @@ public class GolemsDontDiePlugin extends Plugin
 	public void onWallObjectSpawned(WallObjectSpawned event)
 	{
 		islandMemory.passabilityChanged(event.getWallObject().getWorldLocation());
+		// Which side of a range or a tree a golem works from depends on the walls; see WorkSpots.
+		if (workSpots != null)
+		{
+			workSpots.sceneChanged();
+		}
 	}
 
 	@Subscribe
 	public void onWallObjectDespawned(WallObjectDespawned event)
 	{
 		islandMemory.passabilityChanged(event.getWallObject().getWorldLocation());
+		if (workSpots != null)
+		{
+			workSpots.sceneChanged();
+		}
 	}
 
 	/**
