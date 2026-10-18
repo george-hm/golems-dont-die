@@ -2247,7 +2247,10 @@ class Golem
 		if (spots == null || !spots.workableFrom(spot, queuedWorkX, queuedWorkY))
 		{
 			// Felled or moved on while the golem walked over, or a door shut between it and the spot.
-			spots.release(queuedWorkX, queuedWorkY, plane, id);
+			if (spots != null)
+			{
+				spots.release(queuedWorkX, queuedWorkY, plane, id);
+			}
 			return false;
 		}
 		// Not if another golem got the tile first, as two arriving in one frame could.
