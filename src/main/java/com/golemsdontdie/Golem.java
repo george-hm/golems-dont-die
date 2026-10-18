@@ -2160,10 +2160,9 @@ class Golem
 		// Nothing to work at: whittling or stitching where it stands, rarely, and never somewhere
 		// it could not stand to begin with.
 		if (roll < HANDIWORK_CHANCE * eagerness * GolemWork.handiness(traits)
-			&& context.getMemory().isKnownWalkable(tileX, tileY, plane))
+			&& context.getMemory().isKnownWalkable(tileX, tileY, plane) && aloneOn(tileX, tileY, context, true))
 		{
-			startWork(GolemWork.HANDIWORK[random.nextInt(GolemWork.HANDIWORK.length)], null, context);
-			return true;
+			return startWork(GolemWork.HANDIWORK[random.nextInt(GolemWork.HANDIWORK.length)], null, context);
 		}
 		return false;
 	}
@@ -2268,7 +2267,7 @@ class Golem
 		// Longer for a hard worker, and for an angler at the river; shorter for a work-shy golem.
 		int usual = Math.round((WORK_MIN_TICKS + random.nextInt(WORK_SPREAD_TICKS)) * GolemWork.stamina(traits, what));
 		WorkSpots spots = context.getWorkSpots();
-		if (spot != null && (spots == null || !spots.claim(fineX / TILE, fineY / TILE, plane, id, tick, tick + usual + 1)))
+		if (spots == null || !spots.claim(fineX / TILE, fineY / TILE, plane, id, tick, tick + usual + 1))
 		{
 			return false;
 		}
@@ -2312,7 +2311,7 @@ class Golem
 	{
 		int tick = context.getTick();
 		WorkSpots spots = context.getWorkSpots();
-		if (workSpot != null && spots != null)
+		if (spots != null)
 		{
 			spots.release(fineX / TILE, fineY / TILE, plane, id);
 		}
